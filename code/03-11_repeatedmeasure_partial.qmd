@@ -58,7 +58,9 @@ library(nlme) # for repeated measure correlation structures
 Reading data and doing some light wrangling.  
 ```{r}
 #| message: false
-rm_rcbd_df 
+rm_rcbd_df <- read.csv("../data/wheat_nk_balkh_rm.csv") %>%
+  mutate(across(trt:splot, ~factor(.))) %>% #first argument selects columns, second specifies function, dot shows where to apply
+  mutate(fdap = factor(dap))
 
 rm_rcbd_df
 ```
@@ -70,7 +72,9 @@ summary(rm_rcbd_df)
 
 ```{r}
 ggplot(rm_rcbd_df, aes(x = fdap, 
-                       y = yield_kgha)) 
+                       y = yield_kgha)) +
+  geom_boxplot() +
+  facet_grid(.~trtname)
 ```
 
 Yield was measured at 4 time points, in days after planting (dap):  
@@ -112,7 +116,13 @@ We also want to have `fdap` into the fixed effects so we can estimate their mean
 ```{r} 
 options(contrasts = c("contr.sum", "contr.poly"))
 
-mod1_default_lmer 
+mod1_default_lmer <- lmer(yield_kgha ~ krate_kgha*nrate_kgha*fdap + 
+                            (1 | block/krate_kgha/nrate_kgha),
+                          data = rm_rcbd_df
+                          
+                          )
+
+rm_rcbd_df
 
 mod1_default_lmer
 
@@ -126,7 +136,11 @@ Let's refit our default model but now with `lme()`.
 The syntax is a bit different where now random effects are specified in their own argument instead of in the formula argument along with the fixed effects. 
 
 ```{r}
-mod1_default 
+mod1_default <- lme(yield_kgha ~ krate_kgha*nrate_kgha*fdap,
+                    random = ~ 1 | block/krate_kgha/nrate_kgha,
+                          data = rm_rcbd_df,
+                    
+                          )
 
 mod1_default
 ```
@@ -154,7 +168,8 @@ The autocorrelation values are calculated using pairs of residuals within the in
 
 The autocorrelation function is useful for investigating serial correlation models for equally spaced data.
 ```{r}
-
+ACF(mod1_default, resType = "n") %>%
+  plot(alpha = 0.01)
 ```
 Notice we have 4 lags: 0, 1, 2, and 3. These are corresponding to each of the harvest times.  
 
@@ -167,7 +182,12 @@ We see here that **autocorrelation at lags 1 and 2 go beyond the dashed line**, 
 
 # Model 2 - Compound Symmetry  
 ```{r}
-mod2_cs 
+mod2_cs  <- lme(yield_kgha ~ krate_kgha*nrate_kgha*fdap,
+                random = ~ 1 | block/krate_kgha/nrate_kgha,
+                correlation = corCompSymm(form = ~dap), #for this, use numerical version of dap so that it can account for distance
+                data = rm_rcbd_df
+                    
+                          )
 
 mod2_cs
 ```
@@ -185,7 +205,7 @@ Nest, let's check the confidence interval on the rho estimate.
 
 ## interval on rho  
 ```{r}
-
+intervals(mod2_cs, which = "var-cov")
 ```
 The interval of rho includes the value of 0, so not statistically significant, even though it removed the autocorrelation from the residuals.  
 
@@ -211,7 +231,8 @@ Sometimes, AIC and BIC do not agree on which model has the lowest value and thus
 
 ## comparison  
 ```{r}
-
+anova(mod1_default,
+      mod2_cs)
 
 ```
 A few things to notice:  
@@ -229,7 +250,7 @@ Thus, more parameters (more complex model) without a corresponding improvement i
 mod3_gen <- lme(
   yield_kgha ~ krate_kgha*nrate_kgha*fdap,
   random = ~ 1|block/krate_kgha/nrate_kgha,
-
+  correlation = corSymm(),
   data = rm_rcbd_df)
 
 mod3_gen
