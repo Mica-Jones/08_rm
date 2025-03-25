@@ -1,6 +1,6 @@
 ---
 title: "Assignment 7 - Repeated measure"
-author: "YOUR NAME HERE"  
+author: "Micah Jones"  
 format:
   html:
     code-fold: true 
@@ -46,10 +46,376 @@ Once you finish coding along with the videos, answer the following questions.
 # Questions  
 In class, we decided to use AIC as the metric to select the best model, and this determined the best model to be the one with a general error correlation matrix structure. If we had used BIC as the metric, then the model selected would have been the default model. Here, you are asked to use BIC and thus select the default model as the best, and perform all the steps after model selection. You may copy and paste the class script, and adapt the copied version to implement these changes.  
 
-## Q1: Include here the residual assessment of the default model. Include each plot and its interpretation. How do these residuals from the default model visually compare to those from the general model?  
+
+## Setup and Getting Residuals 
+
+### Running All Models
+```{r}
+#| message: false
+#| warning: false
+library(tidyverse) # for data wrangling and plotting
+library(car) # for Anova function
+library(lme4)
+library(broom) # for model residuals extraction
+library(emmeans) # for model mean extraction
+library(multcomp) # for pairwise comparison letter display
+library(nlme) # for repeated measure correlation structures 
+
+```
+  
+```{r}
+#| message: false
+rm_rcbd_df <- read.csv("../data/wheat_nk_balkh_rm.csv") %>%
+  mutate(across(trt:splot, ~factor(.))) %>% #first argument selects columns, second specifies function, dot shows where to apply
+  mutate(fdap = factor(dap))
+
+```
+  
+```{r}
+mod1_default <- lme(yield_kgha ~ krate_kgha*nrate_kgha*fdap,
+                    random = ~ 1 | block/krate_kgha/nrate_kgha,
+                          data = rm_rcbd_df,
+                    
+                          )
+```
+  
+```{r}
+mod2_cs  <- lme(yield_kgha ~ krate_kgha*nrate_kgha*fdap,
+                random = ~ 1 | block/krate_kgha/nrate_kgha,
+                correlation = corCompSymm(form = ~dap), #for this, use numerical version of dap so that it can account for distance
+                data = rm_rcbd_df
+                    
+                          )
+
+```
+  
+```{r}
+mod3_gen <- lme(
+  yield_kgha ~ krate_kgha*nrate_kgha*fdap,
+  random = ~ 1|block/krate_kgha/nrate_kgha,
+  correlation = corSymm(),
+  data = rm_rcbd_df)
+
+```
+  
+```{r}
+mod4_ar1 <- lme(
+  yield_kgha ~ krate_kgha*nrate_kgha*fdap,
+  random = ~ 1|block/krate_kgha/nrate_kgha,
+  correlation = corAR1(form = ~ dap),
+
+  data = rm_rcbd_df)
+
+```
+  
+```{r}
+mod5_arma11 <- lme(
+  yield_kgha ~ krate_kgha*nrate_kgha*fdap,
+  random = ~ 1|block/krate_kgha/nrate_kgha,
+  correlation = corARMA(p = 1,
+                        q = 1),
+
+  data = rm_rcbd_df)
+
+```
+  
+```{r}
+mod6_exp <- lme(
+  yield_kgha ~ krate_kgha*nrate_kgha*fdap,
+  random = ~ 1|block/krate_kgha/nrate_kgha,
+  correlation = corExp(form = ~ dap),
+
+  data = rm_rcbd_df)
+
+```
+  
+```{r}
+mod7_gaus <- lme(
+  yield_kgha ~ krate_kgha*nrate_kgha*fdap,
+  random = ~ 1|block/krate_kgha/nrate_kgha,
+  correlation = corGaus(form = ~ dap),
+
+  data = rm_rcbd_df)
+
+```
+  
+```{r}
+mod8_lin <- lme(
+  yield_kgha ~ krate_kgha*nrate_kgha*fdap,
+  random = ~ 1|block/krate_kgha/nrate_kgha,
+  correlation = corLin(form = ~ dap),
+
+  data = rm_rcbd_df)
+
+```
+  
+```{r}
+mod9_rq <- lme(
+  yield_kgha ~ krate_kgha*nrate_kgha*fdap,
+  random = ~ 1|block/krate_kgha/nrate_kgha,
+  correlation = corRatio(form = ~ dap),
+
+  data = rm_rcbd_df)
+
+```
+  
+```{r}
+mod10_sph <- lme(
+  yield_kgha ~ krate_kgha*nrate_kgha*fdap,
+  random = ~ 1|block/krate_kgha/nrate_kgha,
+  correlation = corSpher(form = ~ dap),
+
+  data = rm_rcbd_df)
+
+```
+  
+### Sorting Models By BIC
+```{r}
+anova(mod1_default, 
+      mod2_cs, mod3_gen, mod4_ar1, mod5_arma11,
+      mod6_exp, mod7_gaus, mod8_lin, mod9_rq, mod10_sph) %>%
+  as.data.frame() %>%
+  rownames_to_column(var = "modelname") %>%
+  janitor::clean_names() %>%
+  dplyr::select(modelname, model, df, aic, bic) %>%
+  arrange(bic)
+
+```
+The lowest BIC value is 1442.369, for the default model.
+
+  
+### Checking Conditions for ANOVA
+
+#### Block Random Effects IID
+```{r}
+ranef(mod3_gen)[[1]] %>%
+  ggplot(aes(sample=`(Intercept)`))+
+  stat_qq(  shape = 21,
+            fill = "purple", 
+            size = 3,
+            alpha = .7
+  )+
+  stat_qq_line()+
+  labs(x = "Theoretical quantile",
+       y = "Sample quantile",
+       title = "Model 3 - General Block")+
+  theme_bw()
+
+```
+  
+```{r}
+ranef(mod1_default)[[1]] %>%
+  ggplot(aes(sample=`(Intercept)`))+
+  stat_qq(  shape = 21,
+            fill = "purple", 
+            size = 3,
+            alpha = .7
+  )+
+  stat_qq_line()+
+  labs(x = "Theoretical quantile",
+       y = "Sample quantile",
+       title = "Model 1 - Default Block")+
+  theme_bw()
+
+```
+The Default model has some deviation around the tails but generally looks fine. Does not appear to differ significantly from the General model plot.
+
+#### Block:KRate Random Effects IID
+
+```{r}
+ranef(mod3_gen)[[2]] %>%
+  ggplot(aes(sample=`(Intercept)`))+
+  stat_qq(  shape = 21,
+            fill = "purple", 
+            size = 3,
+            alpha = .7
+  )+
+  stat_qq_line()+
+  labs(x = "Theoretical quantile",
+       y = "Sample quantile",
+       title = "Model 3 - General Block:Krate")+
+  theme_bw()
+
+```
+
+```{r}
+ranef(mod1_default)[[2]] %>%
+  ggplot(aes(sample=`(Intercept)`))+
+  stat_qq(  shape = 21,
+            fill = "purple", 
+            size = 3,
+            alpha = .7
+  )+
+  stat_qq_line()+
+  labs(x = "Theoretical quantile",
+       y = "Sample quantile",
+       title = "Model 1 - Default Block:Krate")+
+  theme_bw()
+
+```
+Similarly to the first QQ plot, the Default model has some minor deviation around the tails but looks fine. Also does not differ substantially from the General model plot.
+
+#### Block:KRate:NRate Random Effects IID  
+```{r }
+ranef(mod3_gen)[[3]] %>%
+  ggplot(aes(sample=`(Intercept)`))+
+  stat_qq(  shape = 21,
+            fill = "purple", 
+            size = 3,
+            alpha = .7
+  )+
+  stat_qq_line()+
+  labs(x = "Theoretical quantile",
+       y = "Sample quantile",
+       title = "Model 3 - Default Block:Krate:Nrate")+
+  theme_bw()
+
+```
+  
+```{r}
+ranef(mod1_default)[[3]] %>%
+  ggplot(aes(sample=`(Intercept)`))+
+  stat_qq(  shape = 21,
+            fill = "purple", 
+            size = 3,
+            alpha = .7
+  )+
+  stat_qq_line()+
+  labs(x = "Theoretical quantile",
+       y = "Sample quantile",
+       title = "Model 1 - General Block:Krate:Nrate")+
+  theme_bw()
+
+```
+Again, minor deviation around the tails, but nothing too concerning. The General model is again indistinguishable from the Default here.
+  
+  
+## Q1: Include here the residual assessment of the default model. Include each plot and its interpretation. How do these residuals from the default model visually compare to those from the general model? 
+  
+### Getting Residuals
+```{r}
+#| message: false
+#| warning: false
+
+library(broom.mixed)
+
+mod3_gen_resid <- augment(mod3_gen) %>%
+  mutate(.stdresid=resid(mod3_gen, 
+                         type="pearson", 
+                         scaled=T))
+
+mod3_gen_resid
+```
+  
+```{r}
+#| message: false
+#| warning: false
+
+library(broom.mixed)
+
+mod1_default_resid <- augment(mod1_default) %>%
+  mutate(.stdresid=resid(mod1_default, 
+                         type="pearson", 
+                         scaled=T))
+
+mod1_default_resid
+```
+  
+### Within-Group Errors IID  
+```{r}
+#| message: false
+#| warning: false
+
+ggplot(mod3_gen_resid, aes(x=.fitted, y=.stdresid))+
+  geom_hline(yintercept = 0, color="red")+
+  geom_point(shape = 21,
+             fill = "purple", 
+             size = 3,
+             alpha = .7)+
+  geom_smooth()+
+  labs(title = "Model 3 General- Residual Errors") +
+  geom_hline(yintercept = c(-3,3), color = "red")+
+  theme_bw()
+```
+   
+```{r}
+#| message: false
+#| warning: false
+
+ggplot(mod1_default_resid, aes(x=.fitted, y=.stdresid))+
+  geom_hline(yintercept = 0, color="red")+
+  geom_point(shape = 21,
+             fill = "purple", 
+             size = 3,
+             alpha = .7)+
+  geom_smooth()+
+  labs(title = "Model 1 Default- Residual Errors") +
+  geom_hline(yintercept = c(-3,3), color = "red")+
+  theme_bw()
+```
+No clear pattern here, looks good enough to run. 
+
+Slight difference in residuals between the models, but the distributions look similar. 
+   
+   
+```{r}
+#| message: false
+#| warning: false
+
+ggplot(mod3_gen_resid, aes(sample=.stdresid))+
+  stat_qq(  shape = 21,
+            fill = "purple", 
+            size = 3,
+            alpha = .7
+  )+
+  stat_qq_line()+
+  labs(x = "Theoretical quantile",
+       y = "Sample quantile",
+       title = "Model 3 General- Residual QQ")+
+  theme_bw()
+
+```
+   
+```{r}
+#| message: false
+#| warning: false
+
+ggplot(mod3_gen_resid, aes(sample=.stdresid))+
+  stat_qq(  shape = 21,
+            fill = "purple", 
+            size = 3,
+            alpha = .7
+  )+
+  stat_qq_line()+
+  labs(x = "Theoretical quantile",
+       y = "Sample quantile",
+       title = "Model 1 Default- Residual QQ")+
+  theme_bw()
+
+```
+  
+Some deviation on upper tail but it is generally fine, we are still good to proceed. 
+  
+No visible difference from the General model.
+
 
 ## Q2: Include here the ANOVA table from the default model. How does it compare with the ANOVA table from the general model?  
-
+  
+```{r }
+print("Anova - Mod 3 - General")
+Anova(mod3_gen, type = 3)
+```
+  
+```{r}
+print("Anova - Mod 1 - Default")
+Anova(mod1_default, type = 3)
+```
+   
+The default and general models both show days after planting and the interaction between K and N rate as highly significant, but the default model does not show the 3-way interaction between K, N, and DAP as significant at p = 0.05, while the general model shows it as highly significant.   
+  
+This demonstrates that the choice between AIC and BIC as the model selection metric can, at least for some data sets, change how statistics are run and interpreted, and that both should be looked at in order to make an informed decision.
+   
+  
 # Submitting your work  
 Once you have developed all the code and answers, make sure to Render this quarto file.  
 
